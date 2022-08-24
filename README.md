@@ -1,5 +1,5 @@
 # NFDS-guppies
-Data and code for the manuscript "Rare male advantage explained by the sexy son effect in a wild population"
+Data and code for the manuscript "Sexy sons maintain frequency-dependent selection in a long-term study of a natural population"
 
 This project contains three data files and two scripts.
 
