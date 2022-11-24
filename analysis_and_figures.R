@@ -11,8 +11,11 @@
 # Load packages for:
 
 library(data.table) # data wrangling
+library(tidyr) # more data wrangling
 library(glmmTMB) # fitting models
 library(DHARMa) # model diagnostics
+library(ggplot2) # plotting figures
+library(patchwork) # making multi-panel figures
 
 # Load cleaned data:
 
@@ -24,12 +27,23 @@ unions <- fread("NFDS_guppy_unions.csv") # data on unions/matings
 
 # 1. THE MODELS
 
-# Here, we are assessing how male rareness influences components of fitness for:
+##################################################
+
+# A. FITNESS COMPONENTS
+
+# In this section, we assess how male rarity and novelty
+# influences components of fitness for:
 #  - males
 #  - females
 #  - offspring / grandoffspring
 
-# Each of these models are run using calculations of male rareness at three levels:
+# B. INBREEDING AVOIDANCE
+
+# In this section, we assess whether female preference for rare/novel males
+# acts as an inbreeding avoidance mechanism
+
+# Each of the models in A and B are run using calculations of male rarity
+# at three spatial levels:
 
 # - local (i.e. the pool or riffle)
 # - neighborhood (as defined through network analysis)
@@ -94,118 +108,43 @@ n_offspring_pop <- glmmTMB(n_offspring_conceived ~ rareness_pop + loc_arrived + 
 #simulationOutput <- simulateResiduals(fittedModel = n_offspring_pop, plot = T, n = 2000)
 #testQuantiles(simulationOutput)
 
-##################################################
-# SURVIVAL
-# Now, we will consider how male rareness and novelty influence monthly survival probability
-# Because our response is binary, we use logistic regression with a logit-link
-# We additionally inlude "season" as a random intercept to improve the model diagnostics
-
-# local
-surv_local <- glmmTMB(survived ~ rareness_local + loc_arrived + neigh_arrived + 
-                        (1 | sampling) + (1 | FishID) + (1|season)+
-                        (1 | standardized_location),
-                      data = male_data,
-                      family = "binomial")                                   
-
-# check model diagnostics
-#simulationOutput <- simulateResiduals(fittedModel = surv_local, plot = T, n=2000)
-#testQuantiles(simulationOutput)
-
-
-# neighborhood
-surv_neigh <- glmmTMB(survived ~ rareness_neigh + loc_arrived + neigh_arrived +
-                        (1 | sampling) + (1 | FishID) + (1|season)+
-                        (1 | standardized_location), 
-                      data = male_data, 
-                      family= "binomial")
-# check model diagnostics
-#simulationOutput <- simulateResiduals(fittedModel = surv_neigh, plot = T, n=2000)
-#testQuantiles(simulationOutput)
-
-# population
-surv_pop <- glmmTMB(survived ~ rareness_pop + loc_arrived + neigh_arrived +
-                      (1 | sampling) + (1 | FishID) + (1|season)+
-                      (1 | standardized_location), 
-                    data = male_data, 
-                    family= "binomial")
-
-# check model diagnostics
-#simulationOutput <- simulateResiduals(fittedModel = surv_pop, plot = T, n=2000)
-#testQuantiles(simulationOutput)
-
-##################################################
-
-# PROBABILITY OF MATING 
-# Next, we decompose male reproductive success
-# lets look at the probability of mating given rarity and novelty
-# N.B. Because this is a binary outcome (mated/did not mate), we use logistic regression with a logit-link
-
-# local rareness
-p_mating_local <- glmmTMB(bred ~ rareness_local + loc_arrived + neigh_arrived +
-                            (1 | sampling) + (1 | FishID) +
-                            (1 | standardized_location), 
-                          data = male_data, 
-                          family="binomial")
-
-#simulationOutput <- simulateResiduals(fittedModel = p_mating_local, plot = T, n=2000)
-#testQuantiles(simulationOutput)
-
-# neighborhood rareness
-p_mating_neigh <- glmmTMB(bred ~ rareness_neigh + loc_arrived + neigh_arrived + 
-                            (1 | sampling) + (1 | FishID) + 
-                            (1 | standardized_location),  
-                          data = male_data, 
-                          family="binomial")
-
-#simulationOutput <- simulateResiduals(fittedModel = p_mating_neigh, plot = T, n=2000)
-#testQuantiles(simulationOutput)
-
-# population rareness
-p_mating_pop <- glmmTMB(bred ~ rareness_pop + loc_arrived + neigh_arrived +
-                          (1 | sampling) + (1 | FishID) + 
-                          (1 | standardized_location),  
-                        data = male_data,
-                        family="binomial")
-
-#simulationOutput <- simulateResiduals(fittedModel = p_mating_pop, plot = T, n=2000)
-#testQuantiles(simulationOutput)
 
 # NUMBER OF MATING PARTNERS PER MALE PER MONTH
 # Now, let's look at the number of mating partners a male has per month, given his rarity and novelty
-# N.B. because this is count data, but with no zeroes (we are considering the number of mates a male 
-# has, given that he mated at least once), we use a truncated Poisson distribution (log-link)
-# This models the *additional* number of partners he had, given that he had at least one.
+# N.B. Because this count data is over-dipsersed (mean < variance),
+# we use a negative binomial model with a log-link.
 # Same random effects structure as the survival models
 
 # local
 n_partners_local<- glmmTMB(n_mates ~ rareness_local + loc_arrived + neigh_arrived + 
-                             (1 | sampling) + (1 | FishID) + (1|season)+
+                             (1 | sampling) + (1 | FishID) + (1|cohort)+
                              (1 | standardized_location), 
-                           data=male_data[bred==TRUE,], 
-                           family="truncated_poisson")
+                           data=male_data, 
+                           family="nbinom2")
 
 #simulationOutput <- simulateResiduals(fittedModel = n_partners_local, plot = T, n=3000)
+#testOutliers(simulationOutput, type="bootstrap")
 #testQuantiles(simulationOutput)
 
 # neighborhood
 n_partners_neigh<- glmmTMB(n_mates ~ rareness_neigh + loc_arrived + neigh_arrived + 
-                             (1 | sampling) + (1 | FishID) + (1|season)+
+                             (1 | sampling) + (1 | FishID) + (1|cohort) +
                              (1 | standardized_location),  
-                           data=male_data[bred==TRUE,], 
-                           family="truncated_poisson")
+                           data=male_data, 
+                           family="nbinom2")
 
 #simulationOutput <- simulateResiduals(fittedModel = n_partners_neigh, plot = T, n=3000)
 #testQuantiles(simulationOutput)
 
 # population
 n_partners_pop<- glmmTMB(n_mates ~ rareness_pop + loc_arrived + neigh_arrived + 
-                           (1 | sampling) + (1 | FishID) + (1|season)+
+                           (1 | sampling) + (1 | FishID) + (1|cohort) +
                            (1 | standardized_location),
-                         data=male_data[bred==TRUE,], 
-                         family="truncated_poisson")
+                         data=male_data, 
+                         family="nbinom2")
 
-#simulationOutput <- simulateResiduals(fittedModel = n_partners_pop, plot = T, n=3000)
-#testQuantiles(simulationOutput)
+simulationOutput <- simulateResiduals(fittedModel = n_partners_pop, plot = T, n=3000)
+testQuantiles(simulationOutput)
 
 ##################################################
 # In the next section, we look at how many offspring are produced in each mating (union)
@@ -311,7 +250,7 @@ goffspring_per_union_pop <- glmmTMB(goff_per_union ~ dad_rareness_pop + loc_arri
 
 # We use a slightly different random effects structure (earlier versions led to 
 # convergence problems / diagnostic problems). We include "conceived" (which groups individuals
-# concieved in the same month into a cohort), and "dadID" and "grampsID" 
+# conceived in the same month into a cohort), and "dadID" and "grampsID" 
 # to account for paternal and grandpaternal identity as grouping factors.
 
 # Select data
@@ -357,6 +296,70 @@ offspring_reproduction_pop <- glmmTMB(n_offspring_conceived ~ dad_rareness_pop*s
 
 #simulationOutput <- simulateResiduals(fittedModel = offspring_reproduction_pop, plot = T, n=3000)
 #testQuantiles(simulationOutput)
+
+##################################################
+# IS FEMALE PREFERENCE FOR RARE/NOVEL MALES A MECHANISM TO AVOID INBREEDING?
+
+# Here, we model the kinship coefficient of mating partners as a function of 
+# the rarity and novelty of the male partner.
+
+# Rationale: if female preference for rare or novel males acts as a mechanism to avoid
+# inbreeding, i.e. to avoid mating with males to whom they are closely related,
+# then we would expect the kinship coefficient to be lower among mating partners
+# when the male is rare or novel.
+
+# Because kinship coefficients have an unusual distribution (the inclusive
+# range of values is 0 - 0.5), we employed a "hurdle" type modelling approach.
+
+# First, we modeled the zero and non-zero kinship terms using logistic regression.
+# This model asks: is the probability that mating partners are completely unrelated
+# influenced by the rarity or novelty of the male partner?
+
+# We then used a linear model for the log-transformed non-zero terms. This model
+# asks: is kinship coefficient among mating partners influenced by the rarity 
+# or novelty of the male partner?
+
+
+# Probability that mating partners are unrelated
+
+# local
+unrelated_parents_loc <- glmmTMB(unrelated ~ dad_rareness_local + loc_arrived + neigh_arrived,
+                                  data=union_data, family="binomial")
+
+#simulationOutput <- simulateResiduals(fittedModel = unrelated_parents_loc, plot = T, n=3000)
+
+# neigh
+unrelated_parents_neigh <- glmmTMB(unrelated ~ dad_rareness_neigh + loc_arrived + neigh_arrived ,
+                                 data=union_data, family="binomial")
+
+#simulationOutput <- simulateResiduals(fittedModel = unrelated_parents_neigh, plot = T, n=3000)
+
+# pop
+unrelated_parents_pop <- glmmTMB(unrelated ~ dad_rareness_pop + loc_arrived + neigh_arrived,
+                                   data=union_data, family="binomial")
+
+#simulationOutput <- simulateResiduals(fittedModel = unrelated_parents_pop, plot = T, n=3000)
+
+# Influence of rarity/novelty on parental kinship
+
+# local
+parental_kinship_loc <- glmmTMB(ln_parental_kinship ~ dad_rareness_local + loc_arrived + neigh_arrived,
+                                data=union_data[unrelated==FALSE,], family="gaussian")
+
+#simulationOutput <- simulateResiduals(fittedModel = parental_kinship_loc, plot = T, n=3000)
+
+# neigh
+parental_kinship_neigh <- glmmTMB(ln_parental_kinship ~ dad_rareness_neigh + loc_arrived + neigh_arrived,
+                                data=union_data[unrelated==FALSE,], family="gaussian")
+
+#simulationOutput <- simulateResiduals(fittedModel = parental_kinship_neigh, plot = T, n=3000)
+
+# pop
+parental_kinship_pop <- glmmTMB(ln_parental_kinship ~ dad_rareness_pop + loc_arrived + neigh_arrived,
+                                  data=union_data[unrelated==FALSE,], family="gaussian")
+
+#simulationOutput <- simulateResiduals(fittedModel = parental_kinship_pop, plot = T, n=3000)
+
 
 ##################################################
 
@@ -424,7 +427,7 @@ results_fixef <- function(m1, m2, m3, model){
 }
 
 # run the above function for each of the fitness components and collate in a table
-results <- rbind(results_fixef(p_mating_local, p_mating_neigh, p_mating_pop, "Male mating probability"),
+results <- rbind(#results_fixef(p_mating_local, p_mating_neigh, p_mating_pop, "Male mating probability"),
                  results_fixef(n_partners_local, n_partners_neigh, n_partners_pop, "Number of partners"),
                  results_fixef(n_offspring_local, n_offspring_neigh, n_offspring_pop, "Male reproduction"),
                  results_fixef(surv_local, surv_neigh, surv_pop, "Male survival"),
@@ -439,8 +442,14 @@ df <- apply(results,2,as.character)
 write.csv(file="main_results.csv", df, row.names = FALSE)
 
 
-# Extract random effects estimates:
+results_kinship <- rbind(results_fixef(unrelated_parents_loc, unrelated_parents_neigh, unrelated_parents_pop, "Unrelated parents"),
+                         results_fixef(parental_kinship_loc, parental_kinship_neigh, parental_kinship_pop, "log-kinship parents"))
 
+# convert results into .csv friendly format
+df2 <- apply(results_kinship,2,as.character)
+
+# save results in a .csv file
+write.csv(file="kinship_results.csv", df2, row.names = FALSE)
 
 
 ##################################################
@@ -452,6 +461,7 @@ write.csv(file="main_results.csv", df, row.names = FALSE)
 
 preds <- data.frame(rareness_neigh = seq(from= -1.5, to = 1.5, length.out = 100),
                     rareness_pop = seq(from= -1.5, to = 1.5, length.out = 100),
+                    dad_rareness_local = seq(from= -1.5, to = 1.5, length.out = 100),
                     dad_rareness_neigh = seq(from= -1.5, to = 1.5, length.out = 100),
                     dad_rareness_pop = seq(from= -1.5, to = 1.5, length.out = 100),
                     neigh_arrived = TRUE,
@@ -461,7 +471,7 @@ preds <- data.frame(rareness_neigh = seq(from= -1.5, to = 1.5, length.out = 100)
                     standardized_location = NA,
                     dadID = NA,
                     sampling=NA,
-                    season=NA,
+                    cohort=NA,
                     conceived=NA,
                     dad_conceived=NA)
 pred1 <-preds
@@ -484,22 +494,6 @@ n_off$n_off <- exp(n_off$n_off_lin)
 n_off$n_off_l <- exp(n_off$n_off_lin - (1.96 *  n_off$n_off_lin_se))
 n_off$n_off_u <- exp(n_off$n_off_lin + (1.96 *  n_off$n_off_lin_se))
 
-# predict probability of mating (logistic regression, inv.link = u/(1+u), where u= exp(linear predictor)
-p_mating <- as.data.table(predict(p_mating_neigh, 
-                                  newdata = preds, 
-                                  re.form = NA, 
-                                  se.fit = TRUE))
-
-names(p_mating)<-c("p_mating_lin", "p_mating_lin_se")
-
-# take inverse logit
-p_mating$p_mating <- 1 / (1 + exp(-(p_mating$p_mating_lin)))
-
-# confidence intervals on observed scale
-p_mating$p_mating_l <- 1 / (1 + exp(- ((p_mating$p_mating_lin) - (1.96 * p_mating$p_mating_lin_se))))
-p_mating$p_mating_u <- 1 / (1 + exp(- ((p_mating$p_mating_lin) + (1.96 * p_mating$p_mating_lin_se))))
-
-# predict number of partners, given that they mated
 
 n_partners <- as.data.table(predict(n_partners_neigh, 
                                     newdata = preds, 
@@ -507,10 +501,10 @@ n_partners <- as.data.table(predict(n_partners_neigh,
                                     se.fit = TRUE))
 
 names(n_partners)<-c("n_partners_lin", "n_partners_se")
-# log-link for truncated poisson (all individuals have at least one partner)
-n_partners$n_partners <- 1 + exp(n_partners$n_partners_lin)
-n_partners$n_partners_l <- 1 + exp(n_partners$n_partners_lin - (1.96 *n_partners$n_partners_se))
-n_partners$n_partners_u <- 1 + exp (n_partners$n_partners_lin + (1.96 *n_partners$n_partners_se))
+
+n_partners$n_partners <-  exp(n_partners$n_partners_lin)
+n_partners$n_partners_l <-  exp(n_partners$n_partners_lin - (1.96 *n_partners$n_partners_se))
+n_partners$n_partners_u <-  exp (n_partners$n_partners_lin + (1.96 *n_partners$n_partners_se))
 
 # predict number of offspring per partner per month, given that they mated
 
@@ -539,22 +533,9 @@ n_goff$ngoff <- exp(n_goff$n_goff_lin)
 n_goff$n_goff_l <- exp(n_goff$n_goff_lin - (1.96 *  n_goff$n_goff_se))
 n_goff$n_goff_u <- exp(n_goff$n_goff_lin + (1.96 *  n_goff$n_goff_se))
 
-# survival
-surv <- as.data.table(predict(surv_neigh, 
-                              newdata = preds, 
-                              re.form = NA, 
-                              se.fit = TRUE))
-
-names(surv)<-c("surv_lin", "surv_lin_se")
-
-# take inverse logit
-surv$surv <- 1 / (1 + exp(-(surv$surv_lin)))
-
-surv$surv_l <- 1 / (1 + exp(- ((surv$surv_lin) - (1.96 * surv$surv_lin_se))))
-surv$surv_u <- 1 / (1 + exp(- ((surv$surv_lin) + (1.96 * surv$surv_lin_se))))
-
 # Bind the predictions together into a single data.table
-pred <- cbind(preds, n_off, p_mating, n_partners, n_off_per_partner, n_goff, surv )
+
+pred <- cbind(preds, n_off, n_partners, n_off_per_partner, n_goff)
 pred <- as.data.table(pred)
 
 pred$novelty <- ifelse(pred$neigh_arrived==TRUE, "new arrival", "resident")
@@ -582,27 +563,17 @@ comp_novelty <- pred[c(51, 151)]
 
 # Male fitness components (rarity):
 
+# number of partners
+comp_rarity[, round(n_partners[1]/n_partners[2], 2)] # 36% greater in rare
 # n offspring recruited
 comp_rarity[, round(n_off[1]/n_off[2], 2)] # 38% greater in rare
-# probability of mating
-comp_rarity[, round(p_mating[1]/p_mating[2], 2)] # 37% greater in rare
-# number of partners
-comp_rarity[, round(n_partners[1]/n_partners[2], 2)] # 12% greater in rare
-# survival
-comp_rarity[, round(surv[1]/surv[2], 2)] # 0% greater in rare (NOT SIGNIFICANT)
 
 # Male fitness components (novelty):
 
 # n offspring recruited
 comp_novelty[, round(n_off[1]/n_off[2], 3)] # 50% greater in novel 
-# probability of mating
-comp_novelty[, round(p_mating[1]/p_mating[2], 3)] # 79% greater in novel
 # number of partners
-comp_novelty[, round(n_partners[1]/n_partners[2], 2)] # 11% greater in novel (NOT SIGNIFICANT)
-# survival
-comp_novelty[, round(surv[2]/surv[1], 2)] # 14% greater in RESIDENTS,
-# We can describe survival as mortality risk by considering 1/surv probability
-comp_novelty[, round((1/surv[1])/(1|surv[2]), 2)] # mortality risk is 45% greater in novel males
+comp_novelty[, round(n_partners[1]/n_partners[2], 2)] # 45% greater in novel 
 
 # LITTER SIZE - no significant effects of rarity
 # GRAND-OFFSPRING PER LITTER - significant effect of rarity only
@@ -611,10 +582,6 @@ comp_rarity[, round(ngoff[1]/ngoff[2], 2)] # 48% greater in rare
 
 ##################################################
 # 4. FIGURES
-
-# required packages
-library(ggplot2)
-library(patchwork)
 
 # special home-made guppy colour palette! 
 # (using a photo of a male guppy and https://imagecolorpicker.com/)
@@ -629,20 +596,32 @@ ggplot(try, aes(x=test, y=test, colour=test))+geom_point(size=20)+
   theme(legend.position = "none")
 
 ##############
-# The actual figures
+# The actual figures - MAIN TEXT
 
-# distribution of male pattern rarity at the neighborhood level
-dist_rare_ALL <- ggplot(data[sex_stage=="M" & sampling>12,], aes(x=rareness_neigh))+
-  geom_density(alpha=0.5, adjust=2, fill = guppy_palette[4], colour=NA)+
-  labs(x=expression(italic(r)[italic(i)]),
-       y="Density")+
-  geom_segment(aes(x = log(0.5), y=-Inf, yend=0.8, xend=log(0.5)), linetype="dashed")+
-  geom_segment(aes(x = log(2), y=-Inf, yend=0.8, xend=log(2)), linetype="dashed")+
+# FIGURE 1 shows examples of guppy color patterns and their inheritance and was not made in R
+
+# FIGURE 2
+# Composite figure showing predicted fitness functions
+
+# plot of number of partners per month for each male
+# as a function of rarity and novelty
+n_partners_plot <- ggplot(pred, aes(x=rareness_neigh, y=n_partners, colour=novelty))+
   geom_vline(xintercept = 0, linetype="dotted")+
-  annotate("text", x = c(log(0.5), log(2)), y = 0.9, label = c("rare", "common"), size = 3)+
-  xlim(c(-2, 2))+
+  geom_segment(aes(x = log(0.5), y=-Inf, yend=0.6, xend=log(0.5)), linetype="dashed", colour="grey")+
+  geom_segment(aes(x = log(2), y=-Inf, yend=0.6, xend=log(2)), linetype="dashed", colour="grey")+
+  annotate("text", x = c(log(0.5), log(2)), y = 0.65, label = c("r", "c"), size = 4)+
+  geom_ribbon(data=pred, aes(ymin=n_partners_l, ymax=n_partners_u, fill=novelty),
+              colour=NA, alpha=0.2)+ 
+  geom_line()+                  
+  labs(x=expression(italic(r)[italic(i)]), 
+       y="Number of partners",
+       subtitle="A",
+       fill="",
+       colour="")+
+  ylim(c(0, 0.65))+
+  scale_colour_manual(values=guppy_palette[c(1,7)])+
+  scale_fill_manual(values=guppy_palette[c(1,7)])+
   theme_classic()
-
 
 # plot of monthly reproductive success of males as a function of rarity and novelty
 off_per_m_plot <- ggplot(pred, aes(x=rareness_neigh, y=n_off, colour=novelty))+
@@ -654,7 +633,7 @@ off_per_m_plot <- ggplot(pred, aes(x=rareness_neigh, y=n_off, colour=novelty))+
   geom_line()+
   labs(x=expression(italic(r)[italic(i)]),
        y="Recruited offspring",
-       subtitle="C",
+       subtitle="B",
        fill="",
        colour="")+
   scale_colour_manual(values=guppy_palette[c(1,7,1,7)])+
@@ -662,81 +641,23 @@ off_per_m_plot <- ggplot(pred, aes(x=rareness_neigh, y=n_off, colour=novelty))+
   ylim(c(0, 0.65))+
   theme_classic()
 
-# plot of monthly probability of mating for males, as function of rarity and novelty
-p_mating_plot <- ggplot(pred, aes(x=rareness_neigh, y=p_mating, colour=novelty))+
-  geom_vline(xintercept = 0, linetype="dotted")+
-  geom_segment(aes(x = log(0.5), y=-Inf, yend=0.4, xend=log(0.5)), linetype="dashed", colour="grey")+
-  geom_segment(aes(x = log(2), y=-Inf, yend=0.4, xend=log(2)), linetype="dashed", colour="grey")+
-  annotate("text", x = c(log(0.5), log(2)), y = 0.45, label = c("r", "c"), size = 4)+
-  geom_ribbon(data=pred, aes(ymin=p_mating_l, ymax=p_mating_u, fill=novelty),
-              colour=NA, alpha=0.2)+ 
-  geom_line()+
-  labs(x=expression(italic(r)[italic(i)]), 
-       y="Mating probability",
-       subtitle="A",       
-       fill="",
-       colour="")+
-  ylim(c(0,0.45))+
-  scale_colour_manual(values=guppy_palette[c(1,7)])+
-  scale_fill_manual(values=guppy_palette[c(1,7)])+
-  theme_classic()
-
-# plot of number of partners per month for each male (given that they mated at least once)
-# as a function of rarity and novelty
-n_partners_plot <- ggplot(pred, aes(x=rareness_neigh, y=n_partners, colour=novelty))+
-  geom_vline(xintercept = 0, linetype="dotted")+
-  geom_segment(aes(x = log(0.5), y=-Inf, yend=2.65, xend=log(0.5)), linetype="dashed", colour="grey")+
-  geom_segment(aes(x = log(2), y=-Inf, yend=2.65, xend=log(2)), linetype="dashed", colour="grey")+
-  annotate("text", x = c(log(0.5), log(2)), y = 2.75, label = c("r", "c"), size = 4)+
-  geom_ribbon(data=pred, aes(ymin=n_partners_l, ymax=n_partners_u, fill=novelty),
-              colour=NA, alpha=0.2)+ 
-  geom_line()+                  
-  labs(x=expression(italic(r)[italic(i)]), 
-       y="Number of partners",
-       subtitle="B",
-       fill="",
-       colour="")+
-  ylim(c(1, 3))+
-  scale_colour_manual(values=guppy_palette[c(1,7)])+
-  scale_fill_manual(values=guppy_palette[c(1,7)])+
-  theme_classic()
-
-# survival as a function of rarity and novelty
-surv_plot <- ggplot(pred, aes(x=rareness_neigh, y=surv, colour = novelty))+
-  geom_vline(xintercept = 0, linetype="dotted")+
-  geom_segment(aes(x = log(0.5), y=-Inf, yend=0.95, xend=log(0.5)), linetype="dashed", colour="grey")+
-  geom_segment(aes(x = log(2), y=-Inf, yend=0.95, xend=log(2)), linetype="dashed", colour="grey")+
-  annotate("text", x = c(log(0.5), log(2)), y = 1, label = c("r", "c"), size = 4)+
-  geom_ribbon(data=pred, aes(ymin=surv_l, ymax=surv_u, fill=novelty),
-              colour=NA, alpha=0.2)+
-  geom_line()+
-  labs(x=expression(italic(r)[italic(i)]),
-       y="Survival probability",
-       subtitle = "D",
-       fill="",
-       colour="")+
-  ylim(c(0, 1))+
-  annotate("text", x = 1.1, y = 0.9, label = "N. S.", size=4)+
-  scale_colour_manual(values=guppy_palette[c(1,7)])+
-  scale_fill_manual(values=guppy_palette[c(1,7)])+
-  theme_classic()
 
 # plot of mean litter size, as a function of male partner rarity and novelty
 off_per_union_plot <- ggplot(pred, aes(x=dad_rareness_neigh, y=n_off_per_partner, colour=novelty))+
   geom_vline(xintercept = 0, linetype="dotted")+
-  geom_segment(aes(x = log(0.5), y=-Inf, yend=1.27, xend=log(0.5)), linetype="dashed", colour="grey")+
-  geom_segment(aes(x = log(2), y=-Inf, yend=1.27, xend=log(2)), linetype="dashed", colour="grey")+
-  annotate("text", x = c(log(0.5), log(2)), y = 1.3, label = c("r", "c"), size = 4)+
+  geom_segment(aes(x = log(0.5), y=-Inf, yend=1.35, xend=log(0.5)), linetype="dashed", colour="grey")+
+  geom_segment(aes(x = log(2), y=-Inf, yend=1.35, xend=log(2)), linetype="dashed", colour="grey")+
+  annotate("text", x = c(log(0.5), log(2)), y = 1.5, label = c("r", "c"), size = 4)+
   geom_ribbon(data=pred, aes(ymin=n_off_per_partner_l, ymax=n_off_per_partner_u,fill=novelty),
               colour=NA, alpha=0.2)+ 
   geom_line()+
   labs(x=expression(italic(r)[italic(i)]), 
        y="Offspring per mating",
-       subtitle = "A",
+       subtitle = "C",
        fill="",
        colour="")+
-  ylim(c(1, 1.3))+
-  annotate("text", x = 1.2, y = 1.2, label = "N. S.", size=4)+
+  ylim(c(0, 1.5))+
+  annotate("text", x = 1.25, y = 0.9, label = "N. S.", size=4)+
   scale_colour_manual(values=guppy_palette[c(1,7)])+
   scale_fill_manual(values=guppy_palette[c(1,7)])+
   theme_classic()
@@ -753,7 +674,7 @@ goff_per_union_plot <- ggplot(pred, aes(x=dad_rareness_neigh, y=ngoff, colour=no
   geom_line()+
   labs(x=expression(italic(r)[italic(i)]),
        y="Grand-offspring per mating",
-       subtitle = "B",
+       subtitle = "D",
        fill="",
        colour="")+
   ylim(c(0, 3))+
@@ -763,25 +684,18 @@ goff_per_union_plot <- ggplot(pred, aes(x=dad_rareness_neigh, y=ngoff, colour=no
 
 # collate these ointo 2 multipanel figures
 
-Fig2 <- (p_mating_plot | n_partners_plot) /
-  (off_per_m_plot | surv_plot) +
+Fig2 <- (n_partners_plot | off_per_m_plot) /
+  ( off_per_union_plot | goff_per_union_plot) +
   plot_layout(guides="collect") & 
   theme(legend.position = 'bottom')
 
 Fig2
 
-ggsave("Fig2.png")
-
-Fig3 <- (off_per_union_plot / goff_per_union_plot)+
-  plot_layout(guides="collect") &
-  theme(legend.position = 'bottom')
-
-Fig3
-
-ggsave("Fig3.png", width=4,)
+ggsave("Fig2.pdf", width=4.75, height=5.25, units="in")
 
 
-# Figure 4 
+# Figure 3
+# This figure shows the fate of rarity over three generations
 
 library(tidyverse) # for its excellent pivot_longer() function
 
@@ -821,16 +735,99 @@ gfs[is_rare_grandad==TRUE, as.data.table(table(rareness<log(1))), by=generation]
 # f3 = 87 / (145+87) = 38% rare
 
 
-Fig4 <-ggplot(gfs[is_rare_grandad==TRUE,], aes(x=generation, y=rareness, group=FishID))+
-  geom_line(alpha=0.1)+
-  geom_hline(yintercept = 0, colour=guppy_palette[1], linetype="dashed")+
+Fig3 <-ggplot(gfs[is_rare_grandad==TRUE,], aes(x=generation, y=rareness, group=FishID))+
+  geom_hline(yintercept = 0, linetype="dashed")+
+  geom_line(alpha=0.1, size=0.25)+
   annotate("text", x = c(1,2,3), y = 1.4, label = c("100%", "69%", "38%"))+
   labs(x= "Generation", y = expression(italic(r)[italic(i)]))+
   theme_classic()
 
-Fig4
+Fig3
 
-ggsave("Fig4.png", width=7.99*0.75, height=5.67*0.75)
+ggsave("Fig3.pdf", width=2.25, height=2.25, units="in")
+
+
+
+#-------
+
+# SUPPLEMENTARY FIGURES 
+
+# Fig S1
+# proportion of individuals that move between neighborhoods each month
+movement_time <-data[ (sex_stage=="M" | sex_stage=="F"), 
+                      .(Neighborhood = table(neigh_arrived)[2]/sum(table(neigh_arrived)),
+                        Pool = table(loc_arrived)[2]/sum(table(loc_arrived)) ), 
+                      by=c("sampling", "sex_stage")]
+
+movement_time <- pivot_longer(movement_time, cols=c("Neighborhood", "Pool"), 
+                              names_to = "loc")
+
+movement_time <- as.data.table(movement_time)
+
+move_plot <- ggplot(movement_time[sampling>12], 
+                    aes(x=sampling, y=value, colour=sex_stage))+
+  geom_line( )+ 
+  labs(x="Months since introduction", 
+       y= "Proportion of new arrivals", 
+       colour="Sex") + 
+  scale_colour_manual(values=guppy_palette[c(1,7)])+
+  theme_minimal()+
+  facet_wrap(~loc)
+
+ggsave("FigS1.png", width = 8.76/1.5, height=6.19/1.5)
+
+
+# Fig S2
+
+# distribution of male pattern rarity at the neighborhood level
+dist_rare_ALL <- ggplot(data[sex_stage=="M" & sampling>12,], aes(x=rareness_neigh))+
+  geom_density(alpha=0.5, adjust=2, fill = guppy_palette[4], colour=NA)+
+  labs(x=expression(italic(r)[italic(i)]),
+       y="Density")+
+  geom_segment(aes(x = log(0.5), y=-Inf, yend=0.8, xend=log(0.5)), linetype="dashed")+
+  geom_segment(aes(x = log(2), y=-Inf, yend=0.8, xend=log(2)), linetype="dashed")+
+  geom_vline(xintercept = 0, linetype="dotted")+
+  annotate("text", x = c(log(0.5), log(2)), y = 0.9, label = c("rare", "common"), size = 3)+
+  xlim(c(-2, 2))+
+  theme_classic()
+
+# Figure S3
+
+# change in population/neighborhood size over study duration 
+pop_size <- data[!is.na(neighborhood), length(unique(FishID)), by=c("neighborhood", "sampling")]
+pop_size$neighborhood<- as.factor(pop_size$neighborhood)
+
+tot_pop <- pop_size[, sum(V1), by=sampling]
+tot_pop$neighborhood <- "Total population"
+
+pop_size_fig <- ggplot(pop_size[sampling>12,], 
+                       aes(x=sampling, y=V1, colour=neighborhood))+
+  geom_line()+
+  geom_line(data=tot_pop[sampling>12,], aes(x=sampling, y=V1))+
+  labs(y="Number of fish", 
+       x="Months since experimental introduction", 
+       colour="Neighborhood")+
+  scale_colour_manual(values=guppy_palette[c(1,2,3,7,4)])+
+  theme_minimal()
+ggsave("FigS3.pdf")
+
+
+# Figure S4
+# Distribution of parental kinship values
+
+figs4 <- ggplot(union_data, aes(x=parental_kinship))+
+            geom_vline(xintercept = 0.25, linetype="dashed", 
+                       colour = guppy_palette[1])+
+            geom_vline(xintercept = 0.125, linetype="dashed", 
+                       colour = guppy_palette[7])+
+            geom_vline(xintercept = 0.125/2, linetype="dashed", 
+                       colour = guppy_palette[2])+
+            geom_histogram(binwidth=0.0025, fill = guppy_palette[4], alpha=0.7)+
+            labs(x="Kinship coefficient of mating partners",
+                 y="Frequency")+
+            theme_minimal()
+ggsave("FigS4.pdf")
 
 #####################
 # END OF SCRIPT
+

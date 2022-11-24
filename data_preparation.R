@@ -7,6 +7,8 @@
 # 3. Calculating male pattern rarity
 # 4. Quantifying reproductive success
 # 5. Parent-offspring relationships
+# 6. Parental kinship
+# 7. Exporting the datafiles
 
 ##################################################
 
@@ -16,6 +18,7 @@
 library(data.table) # for data wrangling
 library(tidyr) # a bit more data wrangling (specifically the pivot_longer() function)
 library(igraph) # for network analysis 
+library(optiSel) #  for calculating kinship from pedigree
 
 ##################################################
 
@@ -125,7 +128,7 @@ net <- graph_from_adjacency_matrix(links)
 # Identify clusters within the network
 neighbors <- cluster_optimal(net)
 
-#List which neighborhood each pool belongs to
+# List which neighborhood each pool belongs to
 neigh_list<- as.list(membership(neighbors))
 neighs_frame <- do.call(cbind.data.frame, neigh_list)
 neighs <- pivot_longer(neighs_frame, cols = 1:52, 
@@ -449,8 +452,6 @@ unions<- unions[!is.na(dad_rareness_local),]
 
 # We now need to link paternal traits (pattern, rareness) to each offspring.
 
-# Additionally, we calculate the inbreeding coefficient of each individual
-
 ##################################################
 
 # LINKING PATERNAL TRAITS TO OFFSPRING
@@ -492,6 +493,8 @@ data <- merge(x=data, y= dad_gramps_rareness,
 
 
 ##################################################
+# BONUS SECTION - some fiddly bits that belong in Section 2, but couldn't
+# do until reproductive success was calculated and the "unions" data.table created
 
 # add movement data to unions
 
@@ -509,17 +512,81 @@ data <- merge(x = data, y=dad_moved,
               by=c("dadID", "conceived"),
               all.x=TRUE)
 
+# 
+# dad_neigh <- data[sex_stage=="M", c("FishID", "sampling", "neighborhood")]
+# names(dad_neigh)[1]<- "dadID"
+# unions <- merge(x=unions,y=dad_neigh,
+#                 all.x=TRUE,
+#                 by=c("dadID", "sampling"))
 
-# add the date of paternal conception to each row
-
-con_by_id <- data[, .(conceived = conceived[1]), by=FishID]
-pat_con <- con_by_id
-names(pat_con)<- c("dadID", "dad_conceived")
-
-data <- merge(x=data, y=pat_con,
-              by="dadID", all.x=TRUE)
+# # add the date of paternal conception to each row
+# 
+# con_by_id <- data[, .(conceived = conceived[1]), by=FishID]
+# pat_con <- con_by_id
+# names(pat_con)<- c("dadID", "dad_conceived")
+# 
+# data <- merge(x=data, y=pat_con,
+#               by="dadID", all.x=TRUE)
 
 ##################################################
+
+# 6. Parental Kinship
+
+# extract basic pedigree info from data
+ped <- data[, .(dadID = dadID[1],
+                momID = momID[1]),
+                        by=FishID]
+
+# return individuals that we have full parentage info for
+keep_ped <- ped[!is.na(dadID)& !is.na(momID),]
+
+# set founder names to NA
+ped$momID[which(ped$momID=="founder")]<-NA
+ped$dadID[which(ped$dadID=="founder")]<-NA
+
+# prepare the pedigree for analysis (puts individuals in chronological order, etc)
+ped_prep <- prePed(ped)
+
+# Compute the kinship matrix for the population
+
+# The kinship coefficient is the probability that two alleles chosen 
+# from a pair of individuals are identical by descent (IBD).
+# For sibling-sibling or parent-offspring pairs, this is 0.25, 
+# for half-sibs or grandparent-grandchild, this is 0.125, etc.
+
+kmat <- pedIBD(ped_prep, keep.only=keep_ped$FishID)
+# N.B. in this algorithm, if one or both individuals have unidentified parents
+# the kinship coefficient will be biased downwards. The "keep.only" command
+# tells the function to return only the kinship coefficients for individuals
+# with both parents ID'd.
+
+# The following lines of code returns the kinship coefficient for each pair of
+# mating partners in the "unions" data.table.
+# If one of the pair had unidentified parents, it returns NA
+
+unions$parental_kinship <- NA
+
+for (i in 1:dim(unions)[1]){
+  
+  if(unions$dadID[i] %in% colnames(kmat) & unions$momID[i] %in% colnames(kmat)){
+    
+    unions$parental_kinship[i] <- kmat[unions$dadID[i], unions$momID[i]]
+    
+  } else { unions$parental_kinship[i] <- NA }
+}
+
+# for analysis, we need to transform the kinship coefficients so that
+# our models can handle them appropriately.
+
+# Are mating partners completely unrelated, i.e. kinship=0?
+unions$unrelated <- ifelse(unions$parental_kinship==0, TRUE, FALSE)
+
+# Log-transform kinship values for linear regression
+unions$ln_parental_kinship <- log(unions$parental_kinship)
+
+##################################################
+
+# 7 Export the data files
 
 write.csv(file = "NFDS_guppy_data.csv", data, row.names = FALSE)
 write.csv(file = "NFDS_guppy_unions.csv", unions, row.names = FALSE)
