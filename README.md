@@ -1,5 +1,5 @@
 # NFDS-guppies
-Data and code for the manuscript "Sexy sons maintain frequency-dependent selection in a long-term study of a natural population"
+Data and code for the manuscript "Choosy moms and sexy sons maintain frequency-dependent selection in a natural population"
 
 This project contains three data files and two scripts.
 
