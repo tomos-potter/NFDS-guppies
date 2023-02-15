@@ -1,5 +1,6 @@
 # NFDS-guppies
-Data and code for the manuscript "Choosy moms and sexy sons maintain frequency-dependent selection in a natural population"
+Data and code for the manuscript "Female preference for rare males is maintained by indirect selection in Trinidadian guppies
+
 
 This project contains three data files and two scripts.
 
